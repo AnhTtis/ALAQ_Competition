@@ -1,0 +1,42 @@
+# ALQAC 2026 Legal RAG pipeline requirements
+#
+# Recommended install order on GPU machines:
+# 1) Install the CUDA-compatible PyTorch wheel for your machine first, for example:
+#    pip install -U torch --index-url https://download.pytorch.org/whl/cu121
+# 2) Install this file:
+#    pip install -r requirements.txt
+# 3) Put secrets in token/.env, token/alqac.txt, or token/hf.txt.
+#
+# Notes:
+# - Official ALQAC runs must use open-weight local models only; do not add closed model SDKs.
+# - bitsandbytes is used for 4-bit HF loading when available. Windows support can vary.
+# - If bitsandbytes is unavailable, the code falls back to torch float16 loading on CUDA.
+
+# Core runtime
+requests>=2.31.0,<3
+numpy>=1.24.0,<3
+packaging>=23.2
+setuptools>=69.0.0
+protobuf>=3.20.3,<5
+tqdm>=4.66.0
+
+# Local Qwen / Hugging Face inference
+# Default model configured in src/core/config.py: Qwen/Qwen3.5-9B
+torch>=2.2.0
+transformers>=4.45.0
+accelerate>=0.33.0
+safetensors>=0.4.3
+huggingface-hub>=0.24.0
+sentencepiece>=0.2.0
+tokenizers>=0.19.0
+bitsandbytes>=0.43.0
+
+# Law retrieval and reranking
+# Used for BGE-M3 dense retrieval and BGE reranker when enabled.
+sentence-transformers>=3.0.0
+scikit-learn>=1.3.0
+scipy>=1.10.0
+
+# Optional notebook support for the retained Colab/Jupyter references.
+ipykernel>=6.29.0
+jupyter>=1.0.0

@@ -1,0 +1,32 @@
+# Secrets
+.env
+*.env
+hf.txt
+alqac.txt
+*.token
+token/
+
+# Runtime outputs
+runs/
+
+# Claude local data
+.claude/
+
+# Local/cache model artifacts
+hf_cache/
+local_models/
+*.safetensors
+*.gguf
+*.bin
+*.pt
+*.pth
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Notebooks
+*.ipynb
+.ipynb_checkpoints/
