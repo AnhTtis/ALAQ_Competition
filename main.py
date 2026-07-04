@@ -47,7 +47,7 @@ def main() -> None:
                 flush=True,
             )
         if index % max(args.checkpoint_every, 1) == 0 or index == total:
-            partial_metrics = evaluate(partial_records, pipeline.gold)
+            partial_metrics = evaluate(partial_records, pipeline.gold, settings)
             write_outputs(output_dir=settings.outputs_dir, records=partial_records, metrics=partial_metrics)
             write_trace(settings.outputs_dir / "retrieval_trace.jsonl", partial_records)
             if not args.quiet:
@@ -59,7 +59,7 @@ def main() -> None:
         self_consistency_runs=args.self_consistency_runs,
         self_consistency_temperature=args.temperature,
     )
-    metrics = evaluate(records, pipeline.gold)
+    metrics = evaluate(records, pipeline.gold, settings)
     write_outputs(output_dir=settings.outputs_dir, records=records, metrics=metrics)
     write_trace(settings.outputs_dir / "retrieval_trace.jsonl", records)
 

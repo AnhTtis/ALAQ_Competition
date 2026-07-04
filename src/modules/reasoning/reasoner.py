@@ -66,22 +66,33 @@ class LegalReasoner:
             parsed = {}
             fallback_used = True
         prediction = parsed.get("prediction") if isinstance(parsed.get("prediction"), str) else None
+        llm_prediction = prediction
+        rule_prediction = None
+        override_reason = ""
         if self.settings.enable_decision_rule_override:
             rule_prediction = decision_rule_prediction(case_segments)
             if rule_prediction:
-                fallback_used = fallback_used or prediction != rule_prediction
+                if prediction != rule_prediction:
+                    fallback_used = True
+                    override_reason = f"decision_rule:{prediction}->{rule_prediction}"
                 prediction = rule_prediction
         if prediction not in OUTCOME_LABELS:
-            prediction = heuristic_prediction(case.case_query, case_segments)
+            fallback_prediction = heuristic_prediction(case.case_query, case_segments)
+            override_reason = override_reason or f"heuristic_fallback:{prediction}->{fallback_prediction}"
+            prediction = fallback_prediction
             fallback_used = True
+        law_evidence = selected_law_evidence(parsed, law_articles)[: self.settings.final_law_output_max]
         return PredictionRecord(
             case_id=case.case_id,
             prediction=prediction,
-            law_evidence=selected_law_evidence(parsed, law_articles),
+            law_evidence=law_evidence,
             case_evidence=selected_case_evidence(parsed, case_segments),
             api_calls=api_calls,
             confidence=float_or_none(parsed.get("confidence")),
             reasoning_summary=str(parsed.get("reasoning_summary") or parsed.get("rationale") or ""),
             raw_model_output=raw,
             fallback_used=fallback_used,
+            llm_prediction=llm_prediction,
+            decision_rule_prediction=rule_prediction,
+            override_reason=override_reason,
         )

@@ -52,8 +52,11 @@ class CaseRetrievalClient:
 
     def search(self, case_id: str, query: str, *, retries: int | None = None) -> list[CaseSegment]:
         key = self._cache_key(case_id, query)
+        legacy_key = self._cache_key(case_id, query, "", "")
         if key in self._cache:
             return self._segments_from_cache(self._cache[key], query)
+        if legacy_key in self._cache:
+            return self._segments_from_cache(self._cache[legacy_key], query)
         if self.dry_run_cache_only or not self.api_key:
             return []
         response = self._request(case_id, query, retries=self.max_api_retries_per_query if retries is None else retries)

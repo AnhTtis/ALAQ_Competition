@@ -23,11 +23,21 @@ class LawRetriever:
         self.reranker = CrossEncoderReranker(model_id=settings.cross_encoder_model_id)
 
     def search(self, queries: list[str] | str, *, top_k: int | None = None) -> list[LawArticle]:
-        query = _join_queries(queries)
-        if not query:
+        query_list = _as_queries(queries)
+        if not query_list:
             return []
         top_k = top_k or self.settings.law_top_k
-        ranked_lists = []
+        ranked_lists: list[list[LawArticle]] = []
+        for query in query_list:
+            ranked_lists.extend(self._ranked_lists_for_query(query, top_k=top_k))
+        fused = reciprocal_rank_fusion(ranked_lists)
+        candidates = diversify_by_law(fused, top_k=max(self.settings.law_rerank_top_k, top_k), max_per_law_id=12)
+        if self.settings.enable_cross_encoder_rerank and self.settings.llm_backend.lower() != "mock":
+            candidates = self.reranker.rerank(query_list[0], candidates, top_k=max(self.settings.law_rerank_top_k, top_k))
+        return diversify_by_law(candidates, top_k=top_k, max_per_law_id=8)
+
+    def _ranked_lists_for_query(self, query: str, *, top_k: int) -> list[list[LawArticle]]:
+        ranked_lists: list[list[LawArticle]] = []
         exact_hits = article_reference_hits(query, self.articles, self.bm25)
         if exact_hits:
             ranked_lists.append(exact_hits)
@@ -36,14 +46,17 @@ class LawRetriever:
             dense_hits = self.dense.search(query, top_k=max(self.settings.law_dense_candidates, top_k))
             if dense_hits:
                 ranked_lists.append(dense_hits)
-        fused = reciprocal_rank_fusion(ranked_lists)
-        candidates = diversify_by_law(fused, top_k=max(self.settings.law_rerank_top_k, top_k), max_per_law_id=12)
-        if self.settings.enable_cross_encoder_rerank and self.settings.llm_backend.lower() != "mock":
-            candidates = self.reranker.rerank(query, candidates, top_k=max(self.settings.law_rerank_top_k, top_k))
-        return diversify_by_law(candidates, top_k=top_k, max_per_law_id=8)
+        return ranked_lists
 
 
-def _join_queries(queries: list[str] | str) -> str:
+def _as_queries(queries: list[str] | str) -> list[str]:
     if isinstance(queries, str):
-        return compact_text(queries)
-    return compact_text(" ".join(compact_text(query) for query in queries if compact_text(query)))
+        return [compact_text(queries)] if compact_text(queries) else []
+    out: list[str] = []
+    seen: set[str] = set()
+    for query in queries:
+        text = compact_text(query)
+        if text and text not in seen:
+            seen.add(text)
+            out.append(text)
+    return out

@@ -44,7 +44,7 @@ class SelfConsistencyReasoner:
         selected.prediction = winner
         selected.confidence = _average_confidence(winning_records or records)
         selected.case_evidence = _merge_case_evidence(winning_records or records, case_segments)
-        selected.law_evidence = _merge_law_evidence(winning_records or records, law_articles)
+        selected.law_evidence = _merge_law_evidence(winning_records or records, law_articles, self.settings.final_law_output_max)
         selected.raw_model_output = json.dumps(
             [
                 {
@@ -96,7 +96,7 @@ def _merge_case_evidence(records: list[PredictionRecord], fallback: list[CaseSeg
     return out[:16]
 
 
-def _merge_law_evidence(records: list[PredictionRecord], fallback: list[LawArticle]) -> list[LawArticle]:
+def _merge_law_evidence(records: list[PredictionRecord], fallback: list[LawArticle], max_items: int) -> list[LawArticle]:
     seen: set[str] = set()
     out: list[LawArticle] = []
     for record in records:
@@ -108,4 +108,4 @@ def _merge_law_evidence(records: list[PredictionRecord], fallback: list[LawArtic
         if article.evidence_id not in seen:
             seen.add(article.evidence_id)
             out.append(article)
-    return out[:16]
+    return out[:max_items]

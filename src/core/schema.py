@@ -66,10 +66,19 @@ class PredictionRecord:
     law_evidence: list[LawArticle] = field(default_factory=list)
     case_evidence: list[CaseSegment] = field(default_factory=list)
     api_calls: int = 0
+    retrieval_queries: list[str] = field(default_factory=list)
+    retrieval_query_families: list[str] = field(default_factory=list)
+    retrieval_query_new_segments: list[int] = field(default_factory=list)
+    retrieval_query_result_chunks: list[list[str]] = field(default_factory=list)
+    case_segments_retrieved: int = 0
+    no_new_case_queries: int = 0
     confidence: float | None = None
     reasoning_summary: str = ""
     raw_model_output: str = ""
     fallback_used: bool = False
+    llm_prediction: str | None = None
+    decision_rule_prediction: str | None = None
+    override_reason: str = ""
 
     def to_submission(self) -> dict[str, Any]:
         law_evidence: list[Any] = [
