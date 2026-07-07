@@ -126,8 +126,8 @@ class ModularRagPipeline:
             max_attempts = min(self.settings.case_api_calls_per_round, self._remaining_case_api_budget(memory))
             attempted = self.case_agent.run_queries(case, memory, case_queries, max_attempts=max_attempts)
             if attempted == 0:
-                _progress(f"[{case.case_id}] stop retrieval: no case queries executed")
-                break
+                _progress(f"[{case.case_id}] round {round_id}: no case queries executed, continuing to next round")
+                continue
 
         _progress(f"[{case.case_id}] final law retrieval from {len(memory.segments)} case segments")
         final_laws = self._retrieve_final_laws(case, memory.segments)
