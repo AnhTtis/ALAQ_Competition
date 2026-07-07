@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -36,7 +37,58 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-article-chars", type=int, default=1200, help="Cắt mỗi điều luật trong prompt còn tối đa N ký tự.")
     parser.add_argument("--show-sources", action="store_true", help="In các điều luật BM25 đã đưa vào context.")
     parser.add_argument("--once", default=None, help="Hỏi một câu rồi thoát, tiện để smoke test.")
+    parser.add_argument("--list-gpus", action="store_true", help="Liệt kê GPU NVIDIA theo nvidia-smi rồi thoát.")
     return parser.parse_args()
+
+
+def nvidia_smi_lines() -> list[str]:
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "-L"],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except FileNotFoundError:
+        return []
+    if result.returncode != 0:
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def nvidia_smi_gpu_ids() -> list[int]:
+    ids: list[int] = []
+    for line in nvidia_smi_lines():
+        prefix = line.split(":", 1)[0].strip()
+        if prefix.lower().startswith("gpu "):
+            value = prefix.split(None, 1)[1]
+            if value.isdigit():
+                ids.append(int(value))
+    return ids
+
+
+def print_available_gpus() -> None:
+    lines = nvidia_smi_lines()
+    if not lines:
+        print("Không đọc được danh sách GPU từ nvidia-smi.", flush=True)
+        return
+    print("GPU NVIDIA khả dụng theo nvidia-smi:", flush=True)
+    for line in lines:
+        print(f"- {line}", flush=True)
+
+
+def validate_gpu_id_or_exit(args: argparse.Namespace) -> None:
+    if args.gpu_id is None:
+        return
+    ids = nvidia_smi_gpu_ids()
+    if ids and args.gpu_id not in ids:
+        available = ", ".join(str(item) for item in ids)
+        raise SystemExit(
+            f"Không có GPU NVIDIA vật lý số {args.gpu_id}. GPU khả dụng: {available}.\n"
+            f"Hãy chạy với --gpu-id {ids[0]} hoặc dùng --list-gpus để kiểm tra."
+        )
 
 
 def apply_env_overrides(args: argparse.Namespace) -> None:
@@ -74,17 +126,22 @@ def truncate(value: object, limit: int) -> str:
 
 
 def cuda_status() -> str:
+    visible = os.getenv("CUDA_VISIBLE_DEVICES", "").strip()
+    visible_note = f" physical_visible={visible}" if visible else " physical_visible=all"
     try:
         import torch
     except ModuleNotFoundError:
-        return "torch chưa được cài đặt"
+        return f"torch chưa được cài đặt |{visible_note}"
     except (ImportError, OSError) as exc:
-        return f"torch import lỗi: {exc}"
+        return f"torch import lỗi: {exc} |{visible_note}"
 
     if not torch.cuda.is_available():
-        return "CUDA không khả dụng"
+        return f"CUDA không khả dụng |{visible_note}"
     current = torch.cuda.current_device()
-    return f"CUDA OK: devices={torch.cuda.device_count()} active={current} name={torch.cuda.get_device_name(current)}"
+    return (
+        f"CUDA OK:{visible_note} logical_devices={torch.cuda.device_count()} "
+        f"active_logical={current} name={torch.cuda.get_device_name(current)}"
+    )
 
 
 def print_startup(settings: Any, corpus_path: Path, article_count: int) -> None:
@@ -180,6 +237,10 @@ def chat_loop(*, retriever: Any, client: Any, args: argparse.Namespace) -> None:
 def main() -> None:
     configure_stdio()
     args = parse_args()
+    if args.list_gpus:
+        print_available_gpus()
+        return
+    validate_gpu_id_or_exit(args)
     apply_env_overrides(args)
 
     from src.core.config import load_settings
