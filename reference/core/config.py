@@ -57,8 +57,7 @@ class Settings:
     runs_dir: Path = PROJECT_ROOT / "runs"
     cache_dir: Path = PROJECT_ROOT / "runs" / "cache"
     outputs_dir: Path = PROJECT_ROOT / "runs" / "outputs"
-    # HF cache ép về ổ D, override được qua env HF_CACHE_DIR
-    hf_cache_dir: Path = Path(os.getenv("HF_CACHE_DIR", "D:/hf_cache"))
+    hf_cache_dir: Path = PROJECT_ROOT / "hf_cache"
     public_test_path: Path = PROJECT_ROOT / "data" / "ALQAC2026_public_test.json"
     law_corpus_path: Path = PROJECT_ROOT / "data" / "corpus_law_pub.json"
 
@@ -70,18 +69,14 @@ class Settings:
     retry_after_default_seconds: float = _get_float("RETRY_AFTER_DEFAULT_SECONDS", 60.0)
     max_api_retries_per_query: int = _get_int("MAX_API_RETRIES_PER_QUERY", 1)
 
-    # Vi-Qwen2-7B-RAG là model mặc định; backend hf_transformers
-    llm_backend: str = os.getenv("LLM_BACKEND", "hf_transformers")
-    llm_model_id: str = os.getenv("LLM_MODEL_ID", "AITeamVN/Vi-Qwen2-7B-RAG")
+    llm_backend: str = os.getenv("LLM_BACKEND", "mock")
+    llm_model_id: str = os.getenv("LLM_MODEL_ID", "Qwen/Qwen3.5-9B")
     llm_model_path: str = os.getenv("LLM_MODEL_PATH", "")
     llm_device: str = os.getenv("LLM_DEVICE", "auto")
     require_gpu: bool = _get_bool("REQUIRE_GPU", False)
     llm_plan_max_new_tokens: int = _get_int("LLM_PLAN_MAX_NEW_TOKENS", 1024)
     llm_max_new_tokens: int = _get_int("LLM_MAX_NEW_TOKENS", 2048)
-    # Vi-Qwen2-7B-RAG model card khuyến nghị temperature=0.1
-    llm_temperature: float = _get_float("LLM_TEMPERATURE", 0.1)
-    # Vi-Qwen2-7B-RAG dùng bfloat16 theo model card
-    llm_torch_dtype: str = os.getenv("LLM_TORCH_DTYPE", "bfloat16")
+    llm_temperature: float = _get_float("LLM_TEMPERATURE", 0.0)
 
     hf_token_file: str = os.getenv("HF_TOKEN_FILE", "hf.txt")
     embedding_model_id: str = os.getenv("EMBEDDING_MODEL_ID", "BAAI/bge-m3")
@@ -164,21 +159,6 @@ class Settings:
                 if embeddings_cache.exists():
                     embeddings_cache.unlink()
                     removed.append(embeddings_cache)
-        return removed
-
-    def clean_hf_download_artifacts(self) -> list[Path]:
-        """Xoá .lock, .incomplete, tmp*, .part trong hf_cache để tránh corrupt khi resume tải."""
-        removed: list[Path] = []
-        if not self.hf_cache_dir.exists():
-            return removed
-        for pattern in ("*.lock", "*.incomplete", "tmp*", "*.part"):
-            for path in self.hf_cache_dir.rglob(pattern):
-                try:
-                    if path.is_file():
-                        path.unlink()
-                        removed.append(path)
-                except OSError:
-                    pass
         return removed
 
     def disk_free_gb(self, path: Path | None = None) -> float:
