@@ -27,9 +27,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-path", default=None, help="Đường dẫn model local; nếu có sẽ ưu tiên hơn --model-id.")
     parser.add_argument("--cache-dir", default=None, help="HF cache dir. Mặc định theo settings, hiện là D:/hf_cache.")
     parser.add_argument("--gpu", action="store_true", help="Ưu tiên chạy bằng CUDA với device_map=auto.")
-    parser.add_argument("--gpu-id", type=int, default=None, help="CUDA GPU index vật lý; tự động bật --gpu.")
+    parser.add_argument(
+        "--gpu-id",
+        type=int,
+        default=None,
+        help="CUDA GPU index vật lý. Sau khi set CUDA_VISIBLE_DEVICES, PyTorch sẽ thấy nó là cuda:0.",
+    )
     parser.add_argument("--require-gpu", action="store_true", help="Thoát nếu CUDA không khả dụng.")
     parser.add_argument("--device", default=None, help="Override LLM_DEVICE, ví dụ auto, cuda:0, cpu.")
+    parser.add_argument(
+        "--cuda-alloc-conf",
+        default="expandable_segments:True",
+        help="Set PYTORCH_CUDA_ALLOC_CONF trước khi import torch để giảm fragmentation.",
+    )
+    parser.add_argument(
+        "--min-free-vram-gb",
+        type=float,
+        default=0.0,
+        help="Nếu >0, kiểm tra GPU được chọn còn ít nhất N GiB VRAM trống trước khi load model.",
+    )
     parser.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS_PATH, help="File corpus luật JSON.")
     parser.add_argument("--top-k", type=int, default=5, help="Số điều luật BM25 đưa vào context.")
     parser.add_argument("--max-new-tokens", type=int, default=512, help="Giới hạn token sinh ra để tiết kiệm VRAM/RAM.")
@@ -79,6 +95,37 @@ def print_available_gpus() -> None:
         print(f"- {line}", flush=True)
 
 
+def query_gpu_memory(gpu_id: int) -> tuple[str, float | None]:
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=index,name,memory.total,memory.used,memory.free",
+                "--format=csv,noheader,nounits",
+                "-i",
+                str(gpu_id),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except FileNotFoundError:
+        return "nvidia-smi không khả dụng", None
+    if result.returncode != 0:
+        return (result.stderr or result.stdout or "nvidia-smi query lỗi").strip(), None
+    line = result.stdout.strip().splitlines()[0]
+    parts = [part.strip() for part in line.split(",")]
+    free_mib: float | None = None
+    if len(parts) >= 5:
+        try:
+            free_mib = float(parts[4])
+        except ValueError:
+            free_mib = None
+    return line, free_mib
+
+
 def validate_gpu_id_or_exit(args: argparse.Namespace) -> None:
     if args.gpu_id is None:
         return
@@ -91,6 +138,35 @@ def validate_gpu_id_or_exit(args: argparse.Namespace) -> None:
         )
 
 
+def validate_device_arg_or_exit(args: argparse.Namespace) -> None:
+    if args.gpu_id is None or not args.device:
+        return
+    normalized = args.device.strip().lower()
+    if normalized.startswith("cuda:") and normalized != "cuda:0":
+        raise SystemExit(
+            f"Bạn đã chọn GPU vật lý {args.gpu_id}, script sẽ set CUDA_VISIBLE_DEVICES={args.gpu_id}.\n"
+            "Sau khi mask như vậy, PyTorch chỉ nhìn thấy GPU đó dưới tên logic cuda:0.\n"
+            "Vì vậy hãy bỏ --device hoặc dùng --device cuda:0, không dùng --device cuda:3."
+        )
+
+
+def validate_free_vram_or_exit(args: argparse.Namespace) -> None:
+    if args.gpu_id is None or args.min_free_vram_gb <= 0:
+        return
+    status, free_mib = query_gpu_memory(args.gpu_id)
+    if free_mib is None:
+        print(f"Không kiểm tra được VRAM GPU {args.gpu_id}: {status}", flush=True)
+        return
+    required_mib = args.min_free_vram_gb * 1024
+    if free_mib < required_mib:
+        raise SystemExit(
+            f"GPU vật lý {args.gpu_id} không đủ VRAM trống.\n"
+            f"nvidia-smi: {status}\n"
+            f"Cần >= {args.min_free_vram_gb:.2f} GiB trống nhưng chỉ còn {free_mib / 1024:.2f} GiB.\n"
+            "Hãy chọn GPU khác, giảm model/context, hoặc tắt process đang chiếm VRAM."
+        )
+
+
 def apply_env_overrides(args: argparse.Namespace) -> None:
     use_gpu = args.gpu or args.gpu_id is not None
     os.environ["LLM_BACKEND"] = "hf_transformers"
@@ -99,6 +175,8 @@ def apply_env_overrides(args: argparse.Namespace) -> None:
     os.environ["LLM_MAX_NEW_TOKENS"] = str(max(args.max_new_tokens, 1))
     os.environ["LLM_TEMPERATURE"] = str(args.temperature)
     os.environ["REQUIRE_GPU"] = "true" if (use_gpu or args.require_gpu) else "false"
+    if args.cuda_alloc_conf:
+        os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", args.cuda_alloc_conf)
 
     if args.cache_dir:
         os.environ["HF_CACHE_DIR"] = str(args.cache_dir)
@@ -154,6 +232,11 @@ def print_startup(settings: Any, corpus_path: Path, article_count: int) -> None:
     print(f"Device: {settings.llm_device} | require_gpu={settings.require_gpu}", flush=True)
     print(f"Retrieval: BM25 only (dense=false, rerank=false)", flush=True)
     print(f"CUDA: {cuda_status()}", flush=True)
+    visible = os.getenv("CUDA_VISIBLE_DEVICES", "").strip()
+    if visible.isdigit():
+        memory_status, _ = query_gpu_memory(int(visible))
+        print(f"Selected physical GPU {visible}: {memory_status}", flush=True)
+        print("Ghi chú: trong PyTorch, GPU vật lý này sẽ hiện là cuda:0 do CUDA_VISIBLE_DEVICES mask.", flush=True)
     print("Model sẽ được tải vào HF cache nếu chưa có sẵn.", flush=True)
     if "7B" in model_ref.upper() and "CUDA OK" not in cuda_status():
         print("Cảnh báo: model 7B chạy CPU có thể rất chậm hoặc thiếu RAM.", flush=True)
@@ -241,6 +324,8 @@ def main() -> None:
         print_available_gpus()
         return
     validate_gpu_id_or_exit(args)
+    validate_device_arg_or_exit(args)
+    validate_free_vram_or_exit(args)
     apply_env_overrides(args)
 
     from src.core.config import load_settings
