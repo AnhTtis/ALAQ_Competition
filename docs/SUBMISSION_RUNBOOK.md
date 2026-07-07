@@ -22,11 +22,15 @@ Default knobs in `src/core/config.py`:
 
 ```text
 MAX_RAG_ROUNDS=2
-CASE_API_CALLS_PER_ROUND=3
-ROUND_LAW_TOP_K=3
-MAX_CASE_API_CALLS=6
+CASE_API_CALLS_PER_ROUND=4
+ROUND_LAW_TOP_K=2
+MAX_CASE_API_CALLS=8
+FINAL_EVIDENCE_TOP_K=12
+LAW_EVIDENCE_FOR_PROMPT=10
+FINAL_LAW_OUTPUT_MAX=8
 LLM_MODEL_ID=AITeamVN/Vi-Qwen2-7B-RAG
 LLM_BACKEND=hf_transformers
+LLM_TORCH_DTYPE=float16
 ```
 
 ## Submission format
@@ -113,6 +117,12 @@ Production-style local open-weight model run with final voting:
 
 ```bash
 python main.py --gpu-id 0 --self-consistency-runs 3 --print-metrics
+```
+
+Multi-GPU run (Transformers auto-shards across the listed visible GPUs):
+
+```bash
+python main.py --gpus 0,1 --self-consistency-runs 3 --print-metrics
 ```
 
 Cache-only run:

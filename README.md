@@ -34,11 +34,15 @@ Default retrieval knobs in `src/core/config.py`:
 
 ```text
 MAX_RAG_ROUNDS=2
-CASE_API_CALLS_PER_ROUND=3
-ROUND_LAW_TOP_K=3
-MAX_CASE_API_CALLS=6
+CASE_API_CALLS_PER_ROUND=4
+ROUND_LAW_TOP_K=2
+MAX_CASE_API_CALLS=8
+FINAL_EVIDENCE_TOP_K=12
+LAW_EVIDENCE_FOR_PROMPT=10
+FINAL_LAW_OUTPUT_MAX=8
 LLM_MODEL_ID=AITeamVN/Vi-Qwen2-7B-RAG
 LLM_BACKEND=hf_transformers
+LLM_TORCH_DTYPE=float16
 ```
 
 `api_calls` is tracked locally for debugging but is not exported in `submission.json`; BTC computes official API usage from server logs.
@@ -111,10 +115,16 @@ Smoke test without API/model:
 python main.py --limit 1 --no-api --dry-run-cache-only --print-metrics
 ```
 
-Production-style GPU run with the default local Vi-Qwen RAG model and voting:
+Production-style single-GPU run with the default local Vi-Qwen RAG model and voting:
 
 ```bash
 python main.py --gpu-id 0 --self-consistency-runs 3 --print-metrics
+```
+
+Production-style multi-GPU run (let Transformers shard automatically across the visible GPUs):
+
+```bash
+python main.py --gpus 0,1 --self-consistency-runs 3 --print-metrics
 ```
 
 Run with cached Case API responses only, useful when iterating on reasoning/retrieval code without spending API calls:
@@ -127,6 +137,21 @@ Optional speed/debug switches:
 
 ```bash
 python main.py --limit 5 --gpu-id 0 --no-dense --no-rerank --self-consistency-runs 1 --print-metrics
+```
+
+Useful tuning overrides for cases where chunk evidence is too thin or law evidence is too broad:
+
+```bash
+python main.py \
+  --gpu-id 0 \
+  --self-consistency-runs 3 \
+  --max-case-api-calls 8 \
+  --case-api-calls-per-round 4 \
+  --round-law-top-k 2 \
+  --final-evidence-top-k 12 \
+  --law-evidence-for-prompt 10 \
+  --final-law-output-max 8 \
+  --print-metrics
 ```
 
 ## Outputs

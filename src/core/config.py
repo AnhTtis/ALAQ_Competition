@@ -57,8 +57,8 @@ class Settings:
     runs_dir: Path = PROJECT_ROOT / "runs"
     cache_dir: Path = PROJECT_ROOT / "runs" / "cache"
     outputs_dir: Path = PROJECT_ROOT / "runs" / "outputs"
-    # HF cache ép về ổ D, override được qua env HF_CACHE_DIR
-    hf_cache_dir: Path = Path(os.getenv("HF_CACHE_DIR", "D:/hf_cache"))
+    # HF cache mặc định nằm trong repo hiện tại, override được qua env HF_CACHE_DIR
+    hf_cache_dir: Path = Path(os.getenv("HF_CACHE_DIR", str(PROJECT_ROOT / "hf_cache")))
     public_test_path: Path = PROJECT_ROOT / "data" / "ALQAC2026_public_test.json"
     law_corpus_path: Path = PROJECT_ROOT / "data" / "corpus_law_pub.json"
 
@@ -80,8 +80,8 @@ class Settings:
     llm_max_new_tokens: int = _get_int("LLM_MAX_NEW_TOKENS", 2048)
     # Vi-Qwen2-7B-RAG model card khuyến nghị temperature=0.1
     llm_temperature: float = _get_float("LLM_TEMPERATURE", 0.1)
-    # Vi-Qwen2-7B-RAG dùng bfloat16 theo model card
-    llm_torch_dtype: str = os.getenv("LLM_TORCH_DTYPE", "bfloat16")
+    # Giữ float16 mặc định để tương thích tốt hơn với GPU cũ kiểu Tesla M40.
+    llm_torch_dtype: str = os.getenv("LLM_TORCH_DTYPE", "float16")
 
     hf_token_file: str = os.getenv("HF_TOKEN_FILE", "hf.txt")
     embedding_model_id: str = os.getenv("EMBEDDING_MODEL_ID", "BAAI/bge-m3")
@@ -90,21 +90,21 @@ class Settings:
     enable_cross_encoder_rerank: bool = _get_bool("ENABLE_CROSS_ENCODER_RERANK", True)
 
     min_case_api_calls: int = _get_int("MIN_CASE_API_CALLS", 2)
-    max_case_api_calls: int = _get_int("MAX_CASE_API_CALLS", 6)
-    case_api_calls_per_round: int = _get_int("CASE_API_CALLS_PER_ROUND", 3)
+    max_case_api_calls: int = _get_int("MAX_CASE_API_CALLS", 8)
+    case_api_calls_per_round: int = _get_int("CASE_API_CALLS_PER_ROUND", 4)
     max_no_new_segment_queries: int = _get_int("MAX_NO_NEW_SEGMENT_QUERIES", 2)
     max_rag_rounds: int = _get_int("MAX_RAG_ROUNDS", 2)
-    round_law_top_k: int = _get_int("ROUND_LAW_TOP_K", 3)
-    law_top_k: int = _get_int("LAW_TOP_K", 32)
-    law_bm25_candidates: int = _get_int("LAW_BM25_CANDIDATES", 80)
-    law_dense_candidates: int = _get_int("LAW_DENSE_CANDIDATES", 80)
-    law_rerank_top_k: int = _get_int("LAW_RERANK_TOP_K", 32)
-    final_evidence_top_k: int = _get_int("FINAL_EVIDENCE_TOP_K", 16)
+    round_law_top_k: int = _get_int("ROUND_LAW_TOP_K", 2)
+    law_top_k: int = _get_int("LAW_TOP_K", 24)
+    law_bm25_candidates: int = _get_int("LAW_BM25_CANDIDATES", 64)
+    law_dense_candidates: int = _get_int("LAW_DENSE_CANDIDATES", 64)
+    law_rerank_top_k: int = _get_int("LAW_RERANK_TOP_K", 24)
+    final_evidence_top_k: int = _get_int("FINAL_EVIDENCE_TOP_K", 12)
     final_law_output_min: int = _get_int("FINAL_LAW_OUTPUT_MIN", 3)
-    final_law_output_max: int = _get_int("FINAL_LAW_OUTPUT_MAX", 16)
-    case_evidence_for_prompt: int = _get_int("CASE_EVIDENCE_FOR_PROMPT", 24)
-    law_evidence_for_prompt: int = _get_int("LAW_EVIDENCE_FOR_PROMPT", 24)
-    case_segments_for_law_query: int = _get_int("CASE_SEGMENTS_FOR_LAW_QUERY", 10)
+    final_law_output_max: int = _get_int("FINAL_LAW_OUTPUT_MAX", 8)
+    case_evidence_for_prompt: int = _get_int("CASE_EVIDENCE_FOR_PROMPT", 16)
+    law_evidence_for_prompt: int = _get_int("LAW_EVIDENCE_FOR_PROMPT", 10)
+    case_segments_for_law_query: int = _get_int("CASE_SEGMENTS_FOR_LAW_QUERY", 6)
     max_case_text_chars: int = _get_int("MAX_CASE_TEXT_CHARS", 2400)
     max_law_text_chars: int = _get_int("MAX_LAW_TEXT_CHARS", 1300)
     enable_decision_rule_override: bool = _get_bool("ENABLE_DECISION_RULE_OVERRIDE", False)
@@ -130,7 +130,6 @@ class Settings:
     def configure_hf_cache_env(self) -> None:
         os.environ["HF_HOME"] = str(self.hf_cache_dir)
         os.environ["HF_HUB_CACHE"] = str(self.hf_cache_dir / "hub")
-        os.environ["TRANSFORMERS_CACHE"] = str(self.hf_cache_dir / "transformers")
         os.environ["HF_DATASETS_CACHE"] = str(self.hf_cache_dir / "datasets")
         os.environ["SENTENCE_TRANSFORMERS_HOME"] = str(self.hf_cache_dir / "sentence_transformers")
         os.environ["TORCH_HOME"] = str(self.hf_cache_dir / "torch")
@@ -191,3 +190,7 @@ def load_settings() -> Settings:
     settings.ensure_runtime_dirs()
     settings.configure_hf_cache_env()
     return settings
+
+
+def huggingface_model_url(model_id: str) -> str:
+    return f"https://huggingface.co/{model_id}"
