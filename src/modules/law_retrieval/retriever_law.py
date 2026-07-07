@@ -33,7 +33,8 @@ class LawRetriever:
         fused = reciprocal_rank_fusion(ranked_lists)
         candidates = diversify_by_law(fused, top_k=max(self.settings.law_rerank_top_k, top_k), max_per_law_id=12)
         if self.settings.enable_cross_encoder_rerank and self.settings.llm_backend.lower() != "mock":
-            candidates = self.reranker.rerank(query_list[0], candidates, top_k=max(self.settings.law_rerank_top_k, top_k))
+            rerank_query = _combined_rerank_query(query_list)
+            candidates = self.reranker.rerank(rerank_query, candidates, top_k=max(self.settings.law_rerank_top_k, top_k))
         return diversify_by_law(candidates, top_k=top_k, max_per_law_id=8)
 
     def _ranked_lists_for_query(self, query: str, *, top_k: int) -> list[list[LawArticle]]:
@@ -60,3 +61,8 @@ def _as_queries(queries: list[str] | str) -> list[str]:
             seen.add(text)
             out.append(text)
     return out
+
+
+def _combined_rerank_query(queries: list[str], *, max_queries: int = 4, max_chars: int = 900) -> str:
+    combined = compact_text(" ; ".join(queries[:max_queries]))
+    return combined[:max_chars]

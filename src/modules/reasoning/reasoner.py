@@ -26,14 +26,7 @@ class LegalReasoner:
         temperature: float | None = None,
     ) -> PredictionRecord:
         payload = {
-            "case_id": case.case_id,
             "case_query": case.case_query,
-            "label_definitions": {
-                "A_WIN": "Tòa chấp nhận toàn bộ yêu cầu của A/nguyên đơn.",
-                "PARTIAL_A_WIN": "Tòa chấp nhận một phần yêu cầu của nguyên đơn, phần được chấp nhận lớn hơn 50%.",
-                "PARTIAL_B_WIN": "Tòa chấp nhận một phần yêu cầu của nguyên đơn, phần được chấp nhận từ 50% trở xuống.",
-                "B_WIN": "Tòa bác toàn bộ yêu cầu của A/nguyên đơn.",
-            },
             "case_evidence": [
                 {"chunk_id": s.chunk_id, "text": truncate(s.text, self.settings.max_case_text_chars), "score": s.score}
                 for s in case_segments[: self.settings.case_evidence_for_prompt]
@@ -81,7 +74,12 @@ class LegalReasoner:
             override_reason = override_reason or f"heuristic_fallback:{prediction}->{fallback_prediction}"
             prediction = fallback_prediction
             fallback_used = True
-        law_evidence = selected_law_evidence(parsed, law_articles)[: self.settings.final_law_output_max]
+        law_evidence = _backfill_law_evidence(
+            selected_law_evidence(parsed, law_articles),
+            law_articles,
+            min_items=self.settings.final_law_output_min,
+            max_items=self.settings.final_law_output_max,
+        )
         return PredictionRecord(
             case_id=case.case_id,
             prediction=prediction,
@@ -96,3 +94,27 @@ class LegalReasoner:
             decision_rule_prediction=rule_prediction,
             override_reason=override_reason,
         )
+
+
+def _backfill_law_evidence(
+    selected: list[LawArticle],
+    fallback: list[LawArticle],
+    *,
+    min_items: int,
+    max_items: int,
+) -> list[LawArticle]:
+    seen: set[str] = set()
+    out: list[LawArticle] = []
+    for article in selected:
+        if article.evidence_id not in seen:
+            seen.add(article.evidence_id)
+            out.append(article)
+        if len(out) >= max_items:
+            return out[:max_items]
+    for article in fallback:
+        if len(out) >= max(min_items, 0):
+            break
+        if article.evidence_id not in seen:
+            seen.add(article.evidence_id)
+            out.append(article)
+    return out[:max_items]

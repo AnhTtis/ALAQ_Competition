@@ -16,41 +16,65 @@ def _is_vi_qwen_rag(model_ref: str) -> bool:
     return any(rid in model_ref for rid in _VI_QWEN_RAG_IDS)
 
 
-def _build_vi_qwen_prompt(messages: list[dict[str, str]]) -> str:
+def _build_vi_qwen_prompt(messages: list[dict[str, str]], *, json_mode: bool = False) -> str:
     """Chuyển messages thành prompt format của Vi-Qwen2-7B-RAG.
 
-    - system message bị bỏ qua (model có system prompt cố định)
-    - user message được parse thành context + question từ JSON payload
-      (do LegalReasoner/CaseQueryUnderstanding gửi), hoặc dùng trực tiếp nếu plain text
+    Vi-Qwen2-7B-RAG không dùng chat template ổn định như các instruct model khác,
+    nên adapter này giữ lại system prompt, payload JSON và context truy xuất trong
+    một prompt RAG rõ ràng thay vì bỏ qua hướng dẫn hệ thống.
     """
+    system_parts: list[str] = []
+    payload_parts: list[str] = []
     context_parts: list[str] = []
     question = ""
+
     for msg in messages:
-        if msg["role"] == "system":
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+        if role == "system":
+            if content.strip():
+                system_parts.append(content.strip())
             continue
-        if msg["role"] == "user":
-            content = msg["content"]
-            try:
-                data = json.loads(content)
-                if isinstance(data, dict):
-                    question = str(data.get("case_query") or data.get("query") or "")
-                    for ev in (data.get("case_evidence") or []):
-                        text = str(ev.get("text") or "").strip()
-                        if text:
-                            context_parts.append(text)
-                    for ev in (data.get("law_evidence") or []):
-                        text = str(ev.get("text") or "").strip()
-                        if text:
-                            context_parts.append(text)
-                    if not question:
-                        question = content
-            except (json.JSONDecodeError, TypeError):
+        if role != "user":
+            continue
+
+        payload_parts.append(content)
+        try:
+            data = json.loads(content)
+        except (json.JSONDecodeError, TypeError):
+            if not question:
                 question = content
+            continue
+
+        if not isinstance(data, dict):
+            if not question:
+                question = content
+            continue
+
+        question = str(data.get("case_query") or data.get("query") or question or content)
+        for key in ("case_evidence", "law_evidence"):
+            for ev in data.get(key) or []:
+                if not isinstance(ev, dict):
+                    continue
+                text = str(ev.get("text") or "").strip()
+                if text:
+                    context_parts.append(text)
+
+    system_text = "\n\n".join(system_parts) or VI_QWEN_RAG_SYSTEM
+    payload_text = "\n\n".join(payload_parts) or "{}"
     context_text = "\n\n".join(context_parts) or "(không có ngữ cảnh)"
+    json_instruction = (
+        "\n\n### Ràng buộc định dạng :\n"
+        "Chỉ trả về đúng một JSON object hợp lệ, không markdown, không giải thích ngoài JSON."
+        if json_mode
+        else ""
+    )
     return (
         f"{VI_QWEN_RAG_SYSTEM}\n\n"
+        f"### Hướng dẫn hệ thống :\n{system_text}\n\n"
+        f"### Dữ liệu đầu vào :\n{payload_text}\n\n"
         f"### Ngữ cảnh :\n{context_text}\n\n"
-        f"### Câu hỏi :\n{question}\n\n"
+        f"### Câu hỏi :\n{question}{json_instruction}\n\n"
         f"### Trả lời :\n"
     )
 
@@ -75,7 +99,7 @@ class HFTransformersClient(LLMClient):
     ) -> str:
         self._load()
         if self._vi_qwen_mode:
-            prompt = _build_vi_qwen_prompt(messages)
+            prompt = _build_vi_qwen_prompt(messages, json_mode=json_mode)
             inputs = self.tokenizer(prompt, return_tensors="pt")
         else:
             prompt = self.tokenizer.apply_chat_template(

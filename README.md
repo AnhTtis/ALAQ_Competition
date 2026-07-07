@@ -14,28 +14,31 @@ This repository implements a modular local Legal RAG system for ALQAC 2026: Viet
 
 ## Current flow
 
-The maintained pipeline is a 4-round alternating RAG flow followed by final voting:
+The maintained pipeline is a prompt-aligned alternating RAG flow followed by final voting:
 
 ```text
 case_id + case_query
   -> Module A: initial query understanding
-  -> 4 retrieval rounds:
+  -> initial cleaned Case API queries
+  -> MAX_RAG_ROUNDS alternating retrieval rounds:
        1. LLM/fallback generates law-corpus queries
-       2. Module C retrieves top 3 law articles
-       3. LLM/fallback generates up to 4 Case API queries using those laws
-       4. Module B calls the official Top-1 Case API and accumulates case chunks
-  -> Module D/E: self-consistency reasoning and majority vote
+       2. Module C retrieves top law articles
+       3. LLM/fallback generates cleaned Case API queries using those laws
+       4. Module B calls the official Top-1 Case API and accumulates/dedupes case chunks
+  -> Module D/E: final prompt sees only case_query + case_evidence + law_evidence
+  -> self-consistency majority vote
   -> runs/outputs/submission.json
 ```
 
-Default retrieval knobs:
+Default retrieval knobs in `src/core/config.py`:
 
 ```text
-MAX_RAG_ROUNDS=4
-CASE_API_CALLS_PER_ROUND=4
+MAX_RAG_ROUNDS=2
+CASE_API_CALLS_PER_ROUND=3
 ROUND_LAW_TOP_K=3
-MAX_CASE_API_CALLS=16
-LLM_MODEL_ID=Qwen/Qwen3.5-9B
+MAX_CASE_API_CALLS=6
+LLM_MODEL_ID=AITeamVN/Vi-Qwen2-7B-RAG
+LLM_BACKEND=hf_transformers
 ```
 
 `api_calls` is tracked locally for debugging but is not exported in `submission.json`; BTC computes official API usage from server logs.
@@ -56,7 +59,8 @@ LLM_MODEL_ID=Qwen/Qwen3.5-9B
   - no `api_calls` field in `submission.json`.
 - Moved local secrets into `token/`.
 - Moved competition/rule docs into `docs/`.
-- Kept `main.py` as the primary entrypoint and `run_pipeline.py` as a wrapper.
+- Kept `main.py` as the only maintained CLI entrypoint.
+- Removed notebook-only dependencies from `requirements.txt`; notebooks are reference material, not runtime pipeline inputs.
 
 ## Current directory layout
 
@@ -73,6 +77,8 @@ token/                      # local secrets, ignored by git
 runs/                       # runtime outputs/cache, ignored by git
 hf_cache/                   # local HF/model cache, ignored by git
 ```
+
+Runtime pipeline code lives under `src/` plus `main.py`. Notebooks are not imported by the maintained pipeline.
 
 ## Install
 
@@ -105,16 +111,22 @@ Smoke test without API/model:
 python main.py --limit 1 --no-api --dry-run-cache-only --print-metrics
 ```
 
-Production-style GPU run with Qwen/Qwen3.5-9B and voting:
+Production-style GPU run with the default local Vi-Qwen RAG model and voting:
 
 ```bash
 python main.py --gpu-id 0 --self-consistency-runs 3 --print-metrics
 ```
 
-Backward-compatible wrapper:
+Run with cached Case API responses only, useful when iterating on reasoning/retrieval code without spending API calls:
 
 ```bash
-python run_pipeline.py --limit 1 --no-api --print-metrics
+python main.py --limit 1 --dry-run-cache-only --print-metrics
+```
+
+Optional speed/debug switches:
+
+```bash
+python main.py --limit 5 --gpu-id 0 --no-dense --no-rerank --self-consistency-runs 1 --print-metrics
 ```
 
 ## Outputs
@@ -126,4 +138,6 @@ python run_pipeline.py --limit 1 --no-api --print-metrics
 
 ## Notes
 
-`ALQAC2026_colab_full_pipeline.ipynb` is retained as a reference notebook. The maintained notebook should mirror `main.py` and the modular package layout.
+- The maintained runtime path is `main.py` -> `src/` only.
+- `reference/` and the Colab notebooks are archival/reference assets; they are not required for install or official pipeline runs.
+- Final reasoning is intentionally aligned with `FINAL_REASONING_SYSTEM_PROMPT`: the model receives `case_query`, `case_evidence`, and `law_evidence` only, then returns JSON for the official labels and evidence IDs.

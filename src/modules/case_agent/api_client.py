@@ -68,6 +68,8 @@ class CaseRetrievalClient:
         return segments
 
     def _request(self, case_id: str, query: str, *, retries: int) -> Any:
+        if requests is None:
+            raise RuntimeError("The requests package is required when case API calls are enabled.")
         url, headers = self._request_spec()
         payload = {"case_id": case_id, "query": query}
         last_error: Exception | None = None

@@ -5,8 +5,12 @@ from ...core.schema import CaseInput, CaseUnderstanding
 from ...core.text_utils import compact_text, normalize_text
 from .api_client import CaseRetrievalClient
 from .evidence_memory import EvidenceMemory
-from .query_strategy import build_case_queries, classify_case_query
+from .query_strategy import build_case_queries, classify_case_query, clean_case_query_for_retrieval
 from .scoring import has_decision_signal, rank_case_segments
+
+
+def _clean_retrieval_query(query: str) -> str:
+    return clean_case_query_for_retrieval(compact_text(query))
 
 
 class CaseApiAgent:
@@ -24,7 +28,7 @@ class CaseApiAgent:
                 break
             if self._can_stop(memory, api_calls_so_far):
                 break
-            query = compact_text(query)
+            query = _clean_retrieval_query(query)
             if not query:
                 continue
             memory.add_query(query, family=classify_case_query(query))
@@ -57,7 +61,7 @@ class CaseApiAgent:
                 break
             if memory.api_calls >= self.settings.max_case_api_calls:
                 break
-            query = compact_text(raw_query)
+            query = _clean_retrieval_query(raw_query)
             query_key = normalize_text(query)
             if not query or query_key in seen_queries:
                 continue

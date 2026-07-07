@@ -17,7 +17,7 @@ Strategically query the official ALQAC 2026 Case Content API and store retrieved
 ## Key files
 
 - `api_client.py`: cache, auth, endpoint mode, retries, and 5-second rate limiting.
-- `evidence_memory.py`: query/chunk memory and stop-state fields.
+- `evidence_memory.py`: query/chunk memory, chunk/text dedupe, and stop-state fields.
 - `query_strategy.py`: high-value query construction.
 - `scoring.py`: decision/verdict signal scoring.
 - `agent_case.py`: sequential control loop.

@@ -6,25 +6,27 @@ See `docs/COMPETITION_RULES.md` for the latest BTC rules reflected in this repo.
 
 ## Pipeline flow
 
-The local pipeline uses 4 alternating retrieval rounds before final prediction:
+The local pipeline uses a prompt-aligned alternating retrieval loop before final prediction:
 
 1. Analyze `case_query` once.
-2. For each round:
+2. Build initial cleaned Case API queries.
+3. For each round:
    - Generate law-corpus queries with the local LLM or deterministic fallback.
-   - Retrieve top 3 law articles from `corpus_law_pub.json`.
-   - Generate up to 4 Case API queries using the current top laws and retrieved case chunks.
+   - Retrieve top law articles from `corpus_law_pub.json`.
+   - Generate cleaned Case API queries using the current top laws and retrieved case chunks.
    - Call the official Top-1 Case API and accumulate/dedupe evidence.
-3. Run final self-consistency voting over the accumulated case evidence and law evidence.
-4. Export `submission.json`.
+4. Run final self-consistency voting over the accumulated case evidence and law evidence.
+5. Export `submission.json`.
 
-Default knobs:
+Default knobs in `src/core/config.py`:
 
 ```text
-MAX_RAG_ROUNDS=4
-CASE_API_CALLS_PER_ROUND=4
+MAX_RAG_ROUNDS=2
+CASE_API_CALLS_PER_ROUND=3
 ROUND_LAW_TOP_K=3
-MAX_CASE_API_CALLS=16
-LLM_MODEL_ID=Qwen/Qwen3.5-9B
+MAX_CASE_API_CALLS=6
+LLM_MODEL_ID=AITeamVN/Vi-Qwen2-7B-RAG
+LLM_BACKEND=hf_transformers
 ```
 
 ## Submission format
@@ -105,12 +107,6 @@ Debug without GPU/API:
 
 ```bash
 python main.py --limit 1 --no-api --dry-run-cache-only --print-metrics
-```
-
-Backward-compatible command:
-
-```bash
-python run_pipeline.py --limit 1 --no-api --print-metrics
 ```
 
 Production-style local open-weight model run with final voting:

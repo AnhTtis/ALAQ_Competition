@@ -82,14 +82,14 @@ def build_case_queries(understanding: CaseUnderstanding, *, max_queries: int) ->
     anchor = compact_text(" ".join(part for part in (dispute, keyword_text, clean_base) if part))
     anchor = _trim_query(anchor, max_words=48)
 
-    legacy_base = compact_text(understanding.original_query)
+    canonical_base = clean_base or _trim_query(compact_text(understanding.original_query), max_words=42)
     candidates = [
-        compact_text(f"{legacy_base} {PRIORITY_QUERIES[0]}"),
-        compact_text(f"{legacy_base} {PRIORITY_QUERIES[1]}"),
-        compact_text(f"{legacy_base} {PRIORITY_QUERIES[2]}"),
-        compact_text(f"{legacy_base} {PRIORITY_QUERIES[9]}"),
-        compact_text(f"{legacy_base} {PRIORITY_QUERIES[10]}"),
-        compact_text(f"{legacy_base} {PRIORITY_QUERIES[11]}"),
+        compact_text(f"{canonical_base} {PRIORITY_QUERIES[0]}"),
+        compact_text(f"{canonical_base} {PRIORITY_QUERIES[1]}"),
+        compact_text(f"{canonical_base} {PRIORITY_QUERIES[2]}"),
+        compact_text(f"{canonical_base} {PRIORITY_QUERIES[9]}"),
+        compact_text(f"{canonical_base} {PRIORITY_QUERIES[10]}"),
+        compact_text(f"{canonical_base} {PRIORITY_QUERIES[11]}"),
         compact_text(f"{anchor} phần quyết định tuyên xử chấp nhận không chấp nhận một phần"),
         compact_text(f"{anchor} nhận định của tòa án xét thấy có căn cứ không có căn cứ"),
         compact_text(f"{main_claim or anchor} yêu cầu khởi kiện chấp nhận không chấp nhận"),
@@ -100,7 +100,7 @@ def build_case_queries(understanding: CaseUnderstanding, *, max_queries: int) ->
         candidates.append(compact_text(f"{main_position} ý kiến bị đơn phản tố nhận định của tòa"))
 
     for query in PRIORITY_QUERIES[2:6]:
-        candidates.append(compact_text(f"{legacy_base} {query}"))
+        candidates.append(compact_text(f"{canonical_base} {query}"))
     candidates.extend(PRIORITY_QUERIES[:4])
     candidates.extend(understanding.case_search_queries[:6])
     for suffix in PRIORITY_SUFFIXES[:6]:

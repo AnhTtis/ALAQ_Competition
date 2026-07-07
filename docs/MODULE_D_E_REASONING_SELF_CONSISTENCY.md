@@ -4,7 +4,9 @@ Code: `src/modules/reasoning/`
 
 ## Module D: LegalReasoner
 
-`LegalReasoner.predict_once(...)` builds a strict Vietnamese prompt and asks the local LLM to output JSON with:
+`LegalReasoner.predict_once(...)` builds a strict Vietnamese prompt and asks the local LLM to output JSON using only `case_query`, `case_evidence`, and `law_evidence` as final reasoning inputs.
+
+Expected JSON fields:
 
 - `prediction`
 - `confidence`

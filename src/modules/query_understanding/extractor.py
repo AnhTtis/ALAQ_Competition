@@ -6,7 +6,7 @@ import re
 from ...core.schema import CaseSegment, CaseUnderstanding, LawArticle
 from ...core.text_utils import compact_text, normalize_text, truncate
 from ...llm.base import LLMClient
-from ..case_agent.query_strategy import build_case_queries
+from ..case_agent.query_strategy import build_case_queries, clean_case_query_for_retrieval
 from .prompts import QUERY_UNDERSTANDING_SYSTEM_PROMPT, ROUND_CASE_QUERY_SYSTEM_PROMPT, ROUND_LAW_QUERY_SYSTEM_PROMPT
 from .templates import detect_dispute_type, extract_article_refs, extract_legal_keywords, initial_case_queries, initial_law_queries
 
@@ -164,15 +164,16 @@ class CaseQueryUnderstanding:
         *,
         max_queries: int,
     ) -> list[str]:
+        clean_query = clean_case_query_for_retrieval(case_query)
         queries = build_case_queries(understanding, max_queries=max_queries * 3)
         law_guided = []
         for article in law_articles[:3]:
             article_ref = article.article_no or str(article.aid)
             law_guided.extend(
                 [
-                    f"{case_query} áp dụng Điều {article_ref} nhận định của tòa",
-                    f"{case_query} Điều {article_ref} phần quyết định tuyên xử chấp nhận không chấp nhận yêu cầu",
-                    f"{case_query} căn cứ pháp lý Điều {article_ref} nghĩa vụ cụ thể của các bên",
+                    f"{clean_query} áp dụng Điều {article_ref} nhận định của tòa",
+                    f"{clean_query} Điều {article_ref} phần quyết định tuyên xử chấp nhận không chấp nhận yêu cầu",
+                    f"{clean_query} căn cứ pháp lý Điều {article_ref} nghĩa vụ cụ thể của các bên",
                 ]
             )
         return _dedupe_texts(law_guided + queries)[:max_queries]

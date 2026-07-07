@@ -30,10 +30,28 @@ WEIGHTED_DECISION_PHRASES = {
     "yeu cau phan to": 1.5,
 }
 
+NARRATION_PHRASES = {
+    "nguyen don trinh bay": 2.0,
+    "bi don trinh bay": 2.0,
+    "nguoi co quyen loi nghia vu lien quan trinh bay": 2.0,
+    "theo don khoi kien": 1.5,
+    "nguyen don yeu cau toa an": 1.5,
+    "bi don khong dong y": 1.0,
+    "noi dung vu an": 1.0,
+    "tom tat noi dung": 1.0,
+}
+
 
 def decision_score(text: str) -> float:
     normalized = normalize_text(text)
     return sum(weight for phrase, weight in WEIGHTED_DECISION_PHRASES.items() if phrase in normalized)
+
+
+def narration_penalty(text: str) -> float:
+    normalized = normalize_text(text)
+    if any(strong in normalized for strong in ("quyet dinh", "tuyen xu", "vi cac le tren", "hoi dong xet xu")):
+        return 0.0
+    return sum(weight for phrase, weight in NARRATION_PHRASES.items() if phrase in normalized)
 
 
 def has_decision_signal(text: str) -> bool:
@@ -41,4 +59,8 @@ def has_decision_signal(text: str) -> bool:
 
 
 def rank_case_segments(segments: list[CaseSegment]) -> list[CaseSegment]:
-    return sorted(segments, key=lambda segment: (decision_score(segment.text), segment.score), reverse=True)
+    return sorted(
+        segments,
+        key=lambda segment: (decision_score(segment.text), -narration_penalty(segment.text), segment.score),
+        reverse=True,
+    )

@@ -10,19 +10,20 @@ public_test.json
       └─ Module A: Query Understanding
           ├─ dispute type, A/B claims, legal keywords
           └─ round query planner
-              └─ 4 alternating retrieval rounds
+              └─ MAX_RAG_ROUNDS alternating retrieval rounds
                   ├─ Module A generates law-corpus queries
-                  ├─ Module C retrieves top 3 law articles
+                  ├─ Module C retrieves top law articles
                   │   ├─ exact article-reference boost
                   │   ├─ BM25
                   │   ├─ BGE-M3 dense retrieval
-                  │   └─ cross-encoder rerank
-                  ├─ Module A generates up to 4 Case API queries from top laws
+                  │   └─ multi-query cross-encoder rerank
+                  ├─ Module A generates cleaned Case API queries from top laws
                   └─ Module B calls official /retrieve API
                       ├─ X-API-Key auth
                       ├─ Top-1 segment per call, paced at 5s+ per request
-                      └─ EvidenceMemory accumulates chunk ids and local call count
+                      └─ EvidenceMemory dedupes chunk ids/text and tracks local call count
                           └─ Module D: Legal Reasoning
+                              ├─ prompt input is only case_query + case_evidence + law_evidence
                               ├─ strict JSON prediction over 4 official labels
                               └─ cite only provided chunk_id + {law_id, aid}
                                   └─ Module E: Self-consistency
@@ -30,14 +31,15 @@ public_test.json
                                           └─ submission.json
 ```
 
-Default retrieval settings:
+Default retrieval settings in `src/core/config.py`:
 
 ```text
-MAX_RAG_ROUNDS=4
-CASE_API_CALLS_PER_ROUND=4
+MAX_RAG_ROUNDS=2
+CASE_API_CALLS_PER_ROUND=3
 ROUND_LAW_TOP_K=3
-MAX_CASE_API_CALLS=16
-LLM_MODEL_ID=Qwen/Qwen3.5-9B
+MAX_CASE_API_CALLS=6
+LLM_MODEL_ID=AITeamVN/Vi-Qwen2-7B-RAG
+LLM_BACKEND=hf_transformers
 ```
 
 ## Official output contract
@@ -74,7 +76,7 @@ Module priorities follow the metric weights:
 2. Module B must retrieve enough decisive case chunks while avoiding excessive API calls.
 3. Module C must return valid corpus law articles for micro-F1.
 
-The API-efficiency factor gives full credit up to `2*n_i` calls and decays to zero at `5*n_i`, where BTC measures call counts from server logs. The local default `MAX_CASE_API_CALLS=16` matches 4 rounds × 4 case queries.
+The API-efficiency factor gives full credit up to `2*n_i` calls and decays to zero at `5*n_i`, where BTC measures call counts from server logs. The code default `MAX_CASE_API_CALLS=6` matches the current 2 rounds × 3 case queries budget in `src/core/config.py`.
 
 ## Module B behavior
 
@@ -92,7 +94,7 @@ The Case API returns exactly one top-ranked segment per query, so Module B does 
 - `src/modules/case_agent/`: Module B.
 - `src/modules/law_retrieval/`: Module C.
 - `src/modules/reasoning/`: Modules D/E.
-- `src/pipeline/` and `src/pipeline.py`: orchestration compatibility layer.
+- `src/pipeline/`: orchestration layer.
 - `main.py`: primary CLI entrypoint.
 
 ## Competition constraints
