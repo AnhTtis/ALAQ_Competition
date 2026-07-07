@@ -6,6 +6,10 @@ import os
 import sys
 
 
+def _progress_enabled() -> bool:
+    return os.getenv("PIPELINE_QUIET_PROGRESS", "false").lower() not in {"1", "true", "yes", "on"}
+
+
 def main() -> None:
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
@@ -44,6 +48,8 @@ def main() -> None:
     from src.pipeline import RagPipeline, write_trace
 
     settings = load_settings()
+    if _progress_enabled():
+        print("[main] runtime config resolved", flush=True)
     _print_runtime_summary(settings, huggingface_model_url)
     if args.gpu or args.gpu_id is not None or args.gpus is not None:
         _validate_cuda_or_exit(args.gpu_id, args.gpus)
@@ -113,6 +119,7 @@ def _configure_runtime(args) -> None:
         os.environ["LLM_MODEL_PATH"] = args.model_path
     if args.torch_dtype is not None:
         os.environ["LLM_TORCH_DTYPE"] = args.torch_dtype
+    os.environ["PIPELINE_QUIET_PROGRESS"] = "true" if args.quiet else "false"
     if args.no_dense:
         os.environ["ENABLE_DENSE_RETRIEVAL"] = "false"
     if args.no_rerank:

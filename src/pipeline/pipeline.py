@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gc
+import os
 from collections.abc import Callable
 
 from ..core.config import Settings
@@ -14,6 +15,11 @@ from ..modules.case_agent.query_strategy import build_case_queries, clean_case_q
 from ..modules.law_retrieval import LawRetriever
 from ..modules.query_understanding import CaseQueryUnderstanding
 from ..modules.reasoning import LegalReasoner, SelfConsistencyReasoner
+
+
+def _progress(message: str) -> None:
+    if os.getenv("PIPELINE_QUIET_PROGRESS", "false").lower() not in {"1", "true", "yes", "on"}:
+        print(message, flush=True)
 
 
 class ModularRagPipeline:
@@ -71,6 +77,7 @@ class ModularRagPipeline:
         self_consistency_runs: int | None = None,
         self_consistency_temperature: float | None = None,
     ) -> PredictionRecord:
+        _progress(f"[{case.case_id}] start analyze case_query")
         understanding = self.understanding.analyze(case.case_id, case.case_query)
         memory = EvidenceMemory(case_id=case.case_id)
         law_articles: list[LawArticle] = []
@@ -81,11 +88,15 @@ class ModularRagPipeline:
         )
         if initial_query_budget > 0:
             initial_case_queries = build_case_queries(understanding, max_queries=initial_query_budget)
+            _progress(f"[{case.case_id}] initial case retrieval queries={len(initial_case_queries)} budget={initial_query_budget}")
             self.case_agent.run_queries(case, memory, initial_case_queries, max_attempts=initial_query_budget)
 
         for round_id in range(1, self.settings.max_rag_rounds + 1):
-            if self._remaining_case_api_budget(memory) <= 0:
+            remaining_budget = self._remaining_case_api_budget(memory)
+            if remaining_budget <= 0:
+                _progress(f"[{case.case_id}] stop retrieval: api budget exhausted")
                 break
+            _progress(f"[{case.case_id}] round {round_id}/{self.settings.max_rag_rounds}: remaining_api_budget={remaining_budget} case_segments={len(memory.segments)} law_articles={len(law_articles)}")
             law_queries = self.understanding.generate_round_law_queries(
                 case_id=case.case_id,
                 case_query=case.case_query,
@@ -95,7 +106,9 @@ class ModularRagPipeline:
                 case_segments=memory.segments,
                 max_queries=max(self.settings.round_law_top_k, 1),
             )
+            _progress(f"[{case.case_id}] round {round_id}: generated {len(law_queries)} law queries")
             round_laws = self._retrieve_round_laws(law_queries)
+            _progress(f"[{case.case_id}] round {round_id}: retrieved {len(round_laws)} round laws")
             law_articles = self._dedupe_laws(law_articles + round_laws)
             case_queries = self.understanding.generate_round_case_queries(
                 case_id=case.case_id,
@@ -106,15 +119,20 @@ class ModularRagPipeline:
                 case_segments=memory.segments,
                 max_queries=self.settings.case_api_calls_per_round,
             )
+            _progress(f"[{case.case_id}] round {round_id}: generated {len(case_queries)} case queries")
             if not case_queries:
+                _progress(f"[{case.case_id}] stop retrieval: no new case queries generated")
                 break
             max_attempts = min(self.settings.case_api_calls_per_round, self._remaining_case_api_budget(memory))
             attempted = self.case_agent.run_queries(case, memory, case_queries, max_attempts=max_attempts)
             if attempted == 0:
+                _progress(f"[{case.case_id}] stop retrieval: no case queries executed")
                 break
 
+        _progress(f"[{case.case_id}] final law retrieval from {len(memory.segments)} case segments")
         final_laws = self._retrieve_final_laws(case, memory.segments)
         law_articles = self._dedupe_laws(law_articles + final_laws)
+        _progress(f"[{case.case_id}] reasoning with case_segments={len(memory.segments)} law_articles={len(law_articles[: self.settings.final_evidence_top_k])}")
 
         record = self.reasoner.predict(
             case=case,

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from ...core.config import Settings
 from ...core.schema import CaseInput, CaseUnderstanding
 from ...core.text_utils import compact_text, normalize_text
@@ -11,6 +13,11 @@ from .scoring import has_decision_signal, rank_case_segments
 
 def _clean_retrieval_query(query: str) -> str:
     return clean_case_query_for_retrieval(compact_text(query))
+
+
+def _progress(message: str) -> None:
+    if os.getenv("PIPELINE_QUIET_PROGRESS", "false").lower() not in {"1", "true", "yes", "on"}:
+        print(message, flush=True)
 
 
 class CaseApiAgent:
@@ -34,6 +41,7 @@ class CaseApiAgent:
             memory.add_query(query, family=classify_case_query(query))
             remaining_calls = self.settings.max_case_api_calls - api_calls_so_far
             retries = max(0, min(self.settings.max_api_retries_per_query, remaining_calls - 1))
+            _progress(f"[{case.case_id}] initial retrieval query={query!r} retries={retries}")
             try:
                 segments = self.client.search(case.case_id, query, retries=retries)
             except Exception as exc:
@@ -43,6 +51,7 @@ class CaseApiAgent:
                 continue
             added = memory.add_segments(segments)
             memory.add_query_result(segments, added)
+            _progress(f"[{case.case_id}] initial retrieval result chunks={len(segments)} new_segments={added} total_segments={len(memory.segments)}")
             if any(has_decision_signal(segment.text) for segment in segments):
                 memory.decision_found = True
         memory.api_calls = self.client.calls_made - calls_before
@@ -70,6 +79,7 @@ class CaseApiAgent:
             attempted += 1
             remaining_calls = self.settings.max_case_api_calls - memory.api_calls
             retries = max(0, min(self.settings.max_api_retries_per_query, remaining_calls - 1))
+            _progress(f"[{case.case_id}] case retrieval query {attempted}/{max_attempts}: {query!r} retries={retries}")
             try:
                 segments = self.client.search(case.case_id, query, retries=retries)
             except Exception as exc:
@@ -83,6 +93,7 @@ class CaseApiAgent:
             calls_before = self.client.calls_made
             added = memory.add_segments(segments)
             memory.add_query_result(segments, added)
+            _progress(f"[{case.case_id}] case retrieval result chunks={len(segments)} new_segments={added} total_segments={len(memory.segments)} api_calls={memory.api_calls}")
             if any(has_decision_signal(segment.text) for segment in segments):
                 memory.decision_found = True
             logical_calls = max(memory.api_calls, len(memory.queries))

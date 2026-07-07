@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import json
+import os
 from collections import Counter, defaultdict
 
 from ...core.config import Settings
 from ...core.schema import CaseInput, CaseSegment, LawArticle, PredictionRecord
 from .heuristics import decision_rule_prediction
 from .reasoner import LegalReasoner
+
+
+def _progress(message: str) -> None:
+    if os.getenv("PIPELINE_QUIET_PROGRESS", "false").lower() not in {"1", "true", "yes", "on"}:
+        print(message, flush=True)
 
 
 class SelfConsistencyReasoner:
@@ -25,6 +31,7 @@ class SelfConsistencyReasoner:
         temperature: float | None = None,
     ) -> PredictionRecord:
         if not self.settings.enable_self_consistency:
+            _progress(f"[{case.case_id}] self-consistency disabled, running single reasoning pass")
             return self.reasoner.predict_once(
                 case=case,
                 case_segments=case_segments,
@@ -34,10 +41,18 @@ class SelfConsistencyReasoner:
             )
         total_runs = max(1, runs if runs is not None else self.settings.self_consistency_runs)
         temp = temperature if temperature is not None else self.settings.self_consistency_temperature
-        records = [
-            self.reasoner.predict_once(case=case, case_segments=case_segments, law_articles=law_articles, api_calls=api_calls, temperature=temp)
-            for _ in range(total_runs)
-        ]
+        records: list[PredictionRecord] = []
+        for run_id in range(1, total_runs + 1):
+            _progress(f"[{case.case_id}] reasoning run {run_id}/{total_runs} temperature={temp}")
+            records.append(
+                self.reasoner.predict_once(
+                    case=case,
+                    case_segments=case_segments,
+                    law_articles=law_articles,
+                    api_calls=api_calls,
+                    temperature=temp,
+                )
+            )
         winner = self._winner(records, case_segments)
         winning_records = [record for record in records if record.prediction == winner]
         selected = winning_records[0] if winning_records else records[0]
@@ -59,6 +74,7 @@ class SelfConsistencyReasoner:
             ensure_ascii=False,
         )
         selected.fallback_used = any(record.fallback_used for record in records)
+        _progress(f"[{case.case_id}] reasoning winner={winner} winning_runs={len(winning_records) if winning_records else 1} fallback_used={selected.fallback_used}")
         return selected
 
     def _winner(self, records: list[PredictionRecord], case_segments: list[CaseSegment]) -> str:
