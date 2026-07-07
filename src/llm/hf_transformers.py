@@ -1,27 +1,28 @@
 from __future__ import annotations
 
 import json
+import re
 
 from .base import LLMClient
 
-VI_QWEN_RAG_SYSTEM = (
+QWEN_RAG_SYSTEM = (
     "Bạn là một trợ lí Tiếng Việt nhiệt tình và trung thực. "
     "Hãy luôn trả lời một cách hữu ích nhất có thể."
 )
 
-_VI_QWEN_RAG_IDS = {"AITeamVN/Vi-Qwen2-7B-RAG"}
+_QWEN3_HINTS = ("qwen3", "Qwen/Qwen3-8B")
 
 
-def _is_vi_qwen_rag(model_ref: str) -> bool:
-    return any(rid in model_ref for rid in _VI_QWEN_RAG_IDS)
+def _is_qwen3_model(model_ref: str) -> bool:
+    lowered = model_ref.lower()
+    return any(hint.lower() in lowered for hint in _QWEN3_HINTS)
 
 
-def _build_vi_qwen_prompt(messages: list[dict[str, str]], *, json_mode: bool = False) -> str:
-    """Chuyển messages thành prompt format của Vi-Qwen2-7B-RAG.
+def _build_qwen_prompt(messages: list[dict[str, str]], *, json_mode: bool = False) -> str:
+    """Chuyển messages thành prompt format ổn định cho Qwen3.
 
-    Vi-Qwen2-7B-RAG không dùng chat template ổn định như các instruct model khác,
-    nên adapter này giữ lại system prompt, payload JSON và context truy xuất trong
-    một prompt RAG rõ ràng thay vì bỏ qua hướng dẫn hệ thống.
+    Qwen3 có thể sinh thêm phần suy luận nếu không tắt thinking mode,
+    nên prompt này giữ ngữ cảnh gọn và ép đầu ra JSON khi cần.
     """
     system_parts: list[str] = []
     payload_parts: list[str] = []
@@ -60,7 +61,7 @@ def _build_vi_qwen_prompt(messages: list[dict[str, str]], *, json_mode: bool = F
                 if text:
                     context_parts.append(text)
 
-    system_text = "\n\n".join(system_parts) or VI_QWEN_RAG_SYSTEM
+    system_text = "\n\n".join(system_parts) or QWEN_RAG_SYSTEM
     payload_text = "\n\n".join(payload_parts) or "{}"
     context_text = "\n\n".join(context_parts) or "(không có ngữ cảnh)"
     json_instruction = (
@@ -70,7 +71,7 @@ def _build_vi_qwen_prompt(messages: list[dict[str, str]], *, json_mode: bool = F
         else ""
     )
     return (
-        f"{VI_QWEN_RAG_SYSTEM}\n\n"
+        f"{QWEN_RAG_SYSTEM}\n\n"
         f"### Hướng dẫn hệ thống :\n{system_text}\n\n"
         f"### Dữ liệu đầu vào :\n{payload_text}\n\n"
         f"### Ngữ cảnh :\n{context_text}\n\n"
@@ -79,15 +80,20 @@ def _build_vi_qwen_prompt(messages: list[dict[str, str]], *, json_mode: bool = F
     )
 
 
+def _strip_thinking(text: str) -> str:
+    cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.I | re.S).strip()
+    if cleaned:
+        return cleaned
+    return text.strip()
+
+
 class HFTransformersClient(LLMClient):
     def __init__(self, settings):
         self.settings = settings
         self.model = None
         self.tokenizer = None
         self.settings.configure_hf_cache_env()
-        self._vi_qwen_mode = _is_vi_qwen_rag(
-            settings.llm_model_path or settings.llm_model_id
-        )
+        self._qwen3_mode = _is_qwen3_model(settings.llm_model_path or settings.llm_model_id)
 
     def generate(
         self,
@@ -98,14 +104,20 @@ class HFTransformersClient(LLMClient):
         temperature: float = 0.0,
     ) -> str:
         self._load()
-        if self._vi_qwen_mode:
-            prompt = _build_vi_qwen_prompt(messages, json_mode=json_mode)
-            inputs = self.tokenizer(prompt, return_tensors="pt")
+        if self._qwen3_mode:
+            prompt = self.tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=not json_mode,
+            )
         else:
             prompt = self.tokenizer.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
             )
-            inputs = self.tokenizer(prompt, return_tensors="pt")
+        inputs = self.tokenizer(prompt, return_tensors="pt")
 
         input_device = self._input_device()
         if input_device is not None:
@@ -123,7 +135,7 @@ class HFTransformersClient(LLMClient):
                 use_cache=True,
             )
         generated = output_ids[0][inputs["input_ids"].shape[-1]:]
-        return self.tokenizer.decode(generated, skip_special_tokens=True)
+        return _strip_thinking(self.tokenizer.decode(generated, skip_special_tokens=True))
 
     def _input_device(self):
         import torch
@@ -161,7 +173,7 @@ class HFTransformersClient(LLMClient):
 
         self.tokenizer = AutoTokenizer.from_pretrained(model_ref, token=token, trust_remote_code=True)
 
-        # Vi-Qwen2-7B-RAG dùng bfloat16; các model khác theo llm_torch_dtype
+        # Qwen3 và các model khác theo llm_torch_dtype
         dtype_map = {
             "bfloat16": torch.bfloat16,
             "float16": torch.float16,

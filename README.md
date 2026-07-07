@@ -40,7 +40,7 @@ MAX_CASE_API_CALLS=8
 FINAL_EVIDENCE_TOP_K=12
 LAW_EVIDENCE_FOR_PROMPT=10
 FINAL_LAW_OUTPUT_MAX=8
-LLM_MODEL_ID=AITeamVN/Vi-Qwen2-7B-RAG
+LLM_MODEL_ID=Qwen/Qwen3-8B
 LLM_BACKEND=hf_transformers
 LLM_TORCH_DTYPE=float16
 ```
@@ -115,7 +115,7 @@ Smoke test without API/model:
 python main.py --limit 1 --no-api --dry-run-cache-only --print-metrics
 ```
 
-Production-style single-GPU run with the default local Vi-Qwen RAG model and voting:
+Production-style single-GPU run with the default local Qwen3 model and voting:
 
 ```bash
 python main.py --gpu-id 0 --self-consistency-runs 3 --print-metrics
@@ -166,3 +166,4 @@ python main.py \
 - The maintained runtime path is `main.py` -> `src/` only.
 - `reference/` and the Colab notebooks are archival/reference assets; they are not required for install or official pipeline runs.
 - Final reasoning is intentionally aligned with `FINAL_REASONING_SYSTEM_PROMPT`: the model receives `case_query`, `case_evidence`, and `law_evidence` only, then returns JSON for the official labels and evidence IDs.
+- Qwen3 defaults now disable thinking mode for JSON tasks and strip any residual `<think>...</think>` wrapper text before parsing.

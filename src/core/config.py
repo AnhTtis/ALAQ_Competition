@@ -70,9 +70,9 @@ class Settings:
     retry_after_default_seconds: float = _get_float("RETRY_AFTER_DEFAULT_SECONDS", 60.0)
     max_api_retries_per_query: int = _get_int("MAX_API_RETRIES_PER_QUERY", 1)
 
-    # Vi-Qwen2-7B-RAG là model mặc định; backend hf_transformers
+    # Qwen3-8B là model mặc định; backend hf_transformers
     llm_backend: str = os.getenv("LLM_BACKEND", "hf_transformers")
-    llm_model_id: str = os.getenv("LLM_MODEL_ID", "AITeamVN/Vi-Qwen2-7B-RAG")
+    llm_model_id: str = os.getenv("LLM_MODEL_ID", "Qwen/Qwen3-8B")
     llm_model_path: str = os.getenv("LLM_MODEL_PATH", "")
     llm_device: str = os.getenv("LLM_DEVICE", "auto")
     require_gpu: bool = _get_bool("REQUIRE_GPU", False)

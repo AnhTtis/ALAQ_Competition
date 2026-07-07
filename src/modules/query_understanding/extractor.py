@@ -210,6 +210,7 @@ def _parse_json(raw: str) -> object:
     text = raw.strip()
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.I | re.S).strip()
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.I | re.S).strip()
     if not text.startswith("{"):
         match = re.search(r"\{.*\}", text, flags=re.S)
         if match:

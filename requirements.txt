@@ -21,9 +21,9 @@ protobuf>=3.20.3,<5
 tqdm>=4.66.0
 
 # Local Qwen / Hugging Face inference
-# Default model configured in src/core/config.py: AITeamVN/Vi-Qwen2-7B-RAG
+# Default model configured in src/core/config.py: Qwen/Qwen3-8B
 torch>=2.2.0
-transformers>=4.45.0
+transformers>=4.51.0
 accelerate>=0.33.0
 safetensors>=0.4.3
 huggingface-hub>=0.24.0

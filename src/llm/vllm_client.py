@@ -3,6 +3,16 @@ from __future__ import annotations
 from .base import LLMClient
 
 
+def _strip_thinking(text: str) -> str:
+    start = text.lower().find("<think>")
+    end = text.lower().find("</think>")
+    if start != -1 and end != -1 and end >= start:
+        cleaned = (text[:start] + text[end + len("</think>"):]).strip()
+        if cleaned:
+            return cleaned
+    return text.strip()
+
+
 class VLLMClient(LLMClient):
     def __init__(self, settings):
         self.settings = settings
@@ -19,7 +29,12 @@ class VLLMClient(LLMClient):
         temperature: float = 0.0,
     ) -> str:
         self._load()
-        prompt = self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        prompt = self.tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=not json_mode,
+        )
         from vllm import SamplingParams
 
         params = SamplingParams(
@@ -27,7 +42,7 @@ class VLLMClient(LLMClient):
             max_tokens=max_new_tokens or self.settings.llm_max_new_tokens,
         )
         outputs = self.llm.generate([prompt], params)
-        return outputs[0].outputs[0].text
+        return _strip_thinking(outputs[0].outputs[0].text)
 
     def _load(self) -> None:
         if self.llm is not None and self.tokenizer is not None:
