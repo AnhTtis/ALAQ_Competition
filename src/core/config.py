@@ -82,7 +82,7 @@ class Settings:
     llm_temperature: float = _get_float("LLM_TEMPERATURE", 0.1)
     # Giữ float16 mặc định để tương thích tốt hơn với GPU cũ kiểu Tesla M40.
     llm_torch_dtype: str = os.getenv("LLM_TORCH_DTYPE", "float16")
-    enable_4bit_quantization: bool = _get_bool("ENABLE_4BIT_QUANTIZATION", True)
+    enable_4bit_quantization: bool = _get_bool("ENABLE_4BIT_QUANTIZATION", False)
 
     hf_token_file: str = os.getenv("HF_TOKEN_FILE", "hf.txt")
     embedding_model_id: str = os.getenv("EMBEDDING_MODEL_ID", "BAAI/bge-m3")
