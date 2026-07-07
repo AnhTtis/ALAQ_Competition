@@ -6,7 +6,10 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-import requests
+try:
+    import requests
+except ImportError:
+    requests = None
 
 from ...core.schema import CaseSegment
 from ...core.text_utils import normalized_query
@@ -174,3 +177,4 @@ class CaseRetrievalClient:
             item["query"] = query
             segments.append(CaseSegment(**item))
         return segments
+

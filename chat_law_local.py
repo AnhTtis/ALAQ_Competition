@@ -36,6 +36,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--require-gpu", action="store_true", help="Thoát nếu CUDA không khả dụng.")
     parser.add_argument("--device", default=None, help="Override LLM_DEVICE, ví dụ auto, cuda:0, cpu.")
     parser.add_argument(
+        "--torch-dtype",
+        choices=("auto", "bfloat16", "float16", "float32"),
+        default="auto",
+        help="Kiểu dtype khi load model. auto sẽ dùng float16 trên GPU cũ không hỗ trợ bfloat16.",
+    )
+    parser.add_argument(
         "--cuda-alloc-conf",
         default="expandable_segments:True",
         help="Set PYTORCH_CUDA_ALLOC_CONF trước khi import torch để giảm fragmentation.",
@@ -167,6 +173,23 @@ def validate_free_vram_or_exit(args: argparse.Namespace) -> None:
         )
 
 
+def auto_torch_dtype(args: argparse.Namespace) -> str | None:
+    if args.torch_dtype != "auto":
+        return args.torch_dtype
+    if os.getenv("LLM_TORCH_DTYPE"):
+        return None
+    if not (args.gpu or args.gpu_id is not None):
+        return None
+    try:
+        import torch
+    except Exception:
+        return "float16"
+    if not torch.cuda.is_available():
+        return "float16"
+    major, _minor = torch.cuda.get_device_capability(0)
+    return "bfloat16" if major >= 8 else "float16"
+
+
 def apply_env_overrides(args: argparse.Namespace) -> None:
     use_gpu = args.gpu or args.gpu_id is not None
     os.environ["LLM_BACKEND"] = "hf_transformers"
@@ -186,6 +209,9 @@ def apply_env_overrides(args: argparse.Namespace) -> None:
         os.environ["LLM_MODEL_PATH"] = args.model_path
     if args.gpu_id is not None:
         os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu_id)
+    torch_dtype = auto_torch_dtype(args)
+    if torch_dtype:
+        os.environ["LLM_TORCH_DTYPE"] = torch_dtype
     if args.device:
         os.environ["LLM_DEVICE"] = args.device
     elif use_gpu:
@@ -229,7 +255,10 @@ def print_startup(settings: Any, corpus_path: Path, article_count: int) -> None:
     print(f"Law articles: {article_count}", flush=True)
     print(f"Model: {model_ref}", flush=True)
     print(f"HF cache: {settings.hf_cache_dir}", flush=True)
-    print(f"Device: {settings.llm_device} | require_gpu={settings.require_gpu}", flush=True)
+    print(
+        f"Device: {settings.llm_device} | require_gpu={settings.require_gpu} | torch_dtype={settings.llm_torch_dtype}",
+        flush=True,
+    )
     print(f"Retrieval: BM25 only (dense=false, rerank=false)", flush=True)
     print(f"CUDA: {cuda_status()}", flush=True)
     visible = os.getenv("CUDA_VISIBLE_DEVICES", "").strip()
