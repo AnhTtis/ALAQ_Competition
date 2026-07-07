@@ -188,8 +188,8 @@ class HFTransformersClient(LLMClient):
             "torch_dtype": torch_dtype,
         }
 
-        # 4-bit quantization khi CUDA available
-        if torch.cuda.is_available():
+        # 4-bit quantization khi CUDA available và được bật qua env
+        if torch.cuda.is_available() and self.settings.enable_4bit_quantization:
             try:
                 from transformers import BitsAndBytesConfig
 
