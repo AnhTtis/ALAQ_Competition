@@ -108,10 +108,9 @@ def _configure_runtime(args) -> None:
         os.environ["LLM_DEVICE"] = "auto"
         os.environ["REQUIRE_GPU"] = "true"
     else:
-        os.environ.setdefault("LLM_BACKEND", "mock")
-        os.environ["REQUIRE_GPU"] = "false"
-        os.environ.setdefault("ENABLE_DENSE_RETRIEVAL", "false")
-        os.environ.setdefault("ENABLE_CROSS_ENCODER_RERANK", "false")
+        # Preserve the configured backend on non-GPU runs so the env file can
+        # still select a real local model instead of silently falling back to mock.
+        os.environ.setdefault("REQUIRE_GPU", "false")
 
     if args.model_id is not None:
         os.environ["LLM_MODEL_ID"] = args.model_id
