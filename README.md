@@ -30,6 +30,37 @@ case_id + case_query
   -> runs/outputs/submission.json
 ```
 
+### Architecture diagram
+
+```mermaid
+flowchart TD
+    IN["case_id + case_query"] --> A["Module A<br/>Query understanding<br/>(case type, parties, claims)"]
+    A --> Q0["Initial Case API queries"]
+    Q0 --> LOOP
+
+    subgraph LOOP["Alternating RAG rounds (MAX_RAG_ROUNDS)"]
+        direction TB
+        LQ["LLM / fallback:<br/>generate law queries"] --> C
+        subgraph C["Module C - Law retrieval"]
+            direction LR
+            BM["BM25"] --> F["RRF fusion"]
+            DN["BGE-M3 dense"] --> F
+            F --> RR["Cross-encoder rerank<br/>bge-reranker-v2-m3"]
+        end
+        C --> CQ["LLM / fallback:<br/>generate case queries<br/>grounded on retrieved laws"]
+        CQ --> B["Module B - Case API agent<br/>Top-1 /retrieve, 5 s pacing,<br/>API budget"]
+        B --> MEM[("Evidence memory<br/>dedup case chunks")]
+        MEM -. next round .-> LQ
+    end
+
+    LOOP --> D["Module D - Legal reasoner<br/>Qwen3-8B, JSON output<br/>sees only query + evidence"]
+    D --> E["Module E - Self-consistency<br/>N runs, majority vote,<br/>merge evidence"]
+    E --> OUT["submission.json<br/>prediction + case_evidence + law_evidence"]
+
+    CORPUS[("corpus_law_pub.json")] --> C
+    API[("Official Case API")] --> B
+```
+
 Default retrieval knobs in `src/core/config.py`:
 
 ```text
@@ -65,6 +96,33 @@ LLM_TORCH_DTYPE=float16
 - Moved competition/rule docs into `docs/`.
 - Kept `main.py` as the only maintained CLI entrypoint.
 - Removed notebook-only dependencies from `requirements.txt`; notebooks are reference material, not runtime pipeline inputs.
+
+## Results on the public test (50 cases)
+
+Run of 2026-07-08 (`build_rag` branch, Qwen3-8B, 3-run self-consistency, BM25 law retrieval; dense retrieval and cross-encoder rerank were switched off for that run). Scored locally against `verdict_label` in `data/ALQAC2026_public_test.json`:
+
+| Metric | Value |
+|---|---|
+| Outcome accuracy | **38.0%** (19/50) |
+| Majority-class baseline (`PARTIAL_A_WIN`) | 38.0% |
+| Avg. case chunks / law articles submitted | 3.9 / 10 |
+| Cases with empty case evidence | 0 |
+
+Confusion matrix (rows = gold, columns = predicted):
+
+| gold \ pred | A_WIN | PARTIAL_A_WIN | PARTIAL_B_WIN | B_WIN |
+|---|---|---|---|---|
+| A_WIN (16) | 6 | 5 | 0 | 5 |
+| PARTIAL_A_WIN (19) | 2 | 7 | 0 | 10 |
+| PARTIAL_B_WIN (5) | 1 | 2 | 0 | 2 |
+| B_WIN (10) | 3 | 1 | 0 | 6 |
+
+### Error analysis
+
+- The pipeline does not yet beat the majority baseline: retrieval works (every case gets evidence), but the reasoning step does not turn evidence into the right verdict.
+- Strong bias toward `B_WIN` (23 predictions vs 10 gold); 10 of 19 `PARTIAL_A_WIN` cases were flipped to `B_WIN`, so the model confuses "claim partly accepted" with "claim rejected".
+- `PARTIAL_B_WIN` was never predicted; the partial labels need explicit decision criteria in the prompt (which claims were accepted and which were rejected) instead of a single free-form judgement.
+- Next steps: re-enable dense + rerank retrieval, add few-shot examples per label, and calibrate the vote with a per-label prior.
 
 ## Current directory layout
 
